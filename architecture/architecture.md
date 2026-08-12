@@ -12,33 +12,8 @@ kept out of this document — see `docs/data-dictionary.md`,
 for that depth. This file answers one question: **what talks to what, and
 why.**
 
-## High-Level Flow
-
-```
-External GitHub Repository (Raw JSON)
-        │
-        ▼
-Azure Data Factory  ──▶  ADLS Gen2 : Bronze Layer
-        │
-        ▼
-Azure Databricks (PySpark ETL Engine)
-        │
-        ▼
-   Delta Lake Storage
-   ┌─────────────────────────────┐
-   │  Silver Layer (cleaned)     │
-   │        │           │        │
-   │        ▼           ▼        │
-   │  Gold Layer   Data Quality  │
-   │  (benchmarks)  & Audit Logs │
-   └─────────────────────────────┘
-        │
-        ▼
-Azure SQL Database (Star Schema + SCD Type 2)
-        │
-        ▼
-Power BI (Executive Dashboards)
-```
+## Architecture diagram : (from `architecture-diagram.png`)
+![Architecture Design](architecture-diagram.png)
 
 The platform implements: **Ingest → Validate → Store → Transform → Curate →
 Serve → Visualize**, following a Medallion Architecture (Bronze / Silver /
