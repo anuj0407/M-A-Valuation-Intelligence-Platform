@@ -171,8 +171,8 @@ Storage (Silver, Gold, Data Quality & Audit)
 | Architecture Zone | Repository Location |
 |---|---|
 | Zone 2 — ADF | `adf/pipelines/`, `adf/datasets/`, `adf/linked-services/`, `adf/triggers/` |
-| Zone 3 — Databricks / Delta | `databricks/notebooks/`, `databricks/utilities/` |
-| Zone 4 — Azure SQL | `sql/ddl/`, `sql/dimensions/`, `sql/facts/`, `sql/views/`, `sql/stored-procedures/` |
+| Zone 3 — Databricks / Delta | `databricks/notebooks/`|
+| Zone 4 — Azure SQL | `sql/control/`, `sql/ddl/`, `sql/dimensions/`, `sql/facts/`, `sql/views/` |
 | Zone 5 — Power BI | `powerbi/dashboard.pbix`, `powerbi/screenshots/` |
 | Supporting docs | `docs/data-dictionary.md`, `docs/pipeline-design.md`, `docs/data-quality.md`, `docs/business-rules.md` |
-| Tests | `tests/data-quality/`, `tests/transformation/` |
+
