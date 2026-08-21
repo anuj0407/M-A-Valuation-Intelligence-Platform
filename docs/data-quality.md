@@ -47,8 +47,8 @@ that loads the canonical Silver table (explicit
 | `invalid_records` | Rows failing one or more rules |
 | `duplicate_records` | Rows failing Rule 5 |
 | `null_records` | Rows failing Rule 1 |
-| `quality_score` | `valid_records / total_records` |
-| `pipeline_status` | `PASSED` / `FAILED` |
+| `quality_score` | `round((valid_records / total_records) * 100, 2)` |
+| `pipeline_status` | `PASSED` if `quality_score >= 95.0`, else `FAILED` |
 
 ## Last Verified Run
 
