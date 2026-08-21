@@ -41,7 +41,7 @@ records (see `docs/business-rules.md`).
 |---|---|
 | `valuation_id` | Surrogate/business key |
 | `sub_vertical` | Industry / sub-vertical |
-| `ev_bracket` | Enterprise-value range. Null for rows sourced from `multiples-by-year.json` |
+| `ev_bracket` | Enterprise-value bracket **key** (e.g. `under_5m_ev`, `5m_25m_ev`, `25m_100m_ev`, `100m_500m_ev`, `over_500m_ev`) — not the display label. Null for rows sourced from `multiples-by-year.json` |
 | `metric_type` | EV/EBITDA or EV/Revenue |
 | `p25` | 25th percentile |
 | `median_multiple` | Median |
@@ -74,7 +74,8 @@ feed the merge into the canonical table.
 | Column | Description |
 |---|---|
 | `ev_bracket_id` | Surrogate key |
-| `ev_bracket` | Label (e.g. `<$5M`) |
+| `ev_bracket` | Bracket key (e.g. `under_5m_ev`) — matches `silver_valuation_multiple.ev_bracket` for joins |
+| `ev_bracket_label` | Human-readable display label (e.g. `<$5M`) — used for Power BI axis/legend text, not for joins |
 | `min_ev` / `max_ev` | Numeric range bounds |
 | `bracket_order` | 1–5, used to force correct (non-alphabetical) sort order in Power BI |
 
