@@ -54,3 +54,15 @@ that loads the canonical Silver table (explicit
 
 404 / 404 valid, 0 invalid, 0 duplicate, 0 null records — quality score
 100%, status `PASSED`.
+
+## Serving Layer Load Verification
+
+The `FactValuation` load (Azure SQL serving layer) is checked with a
+simpler row-count reconciliation rather than the six-rule framework above,
+since by the time data reaches this stage it has already passed Silver
+validation — the risk here is a dimension lookup silently dropping rows,
+not a data quality defect in the values themselves. Staged row count is
+compared against loaded row count after the surrogate-key-resolving
+`INSERT`; a shortfall would indicate a `sub_vertical`, `ev_bracket`,
+`year`, or `metric_code` value in Gold that doesn't match any dimension
+row. Last verified: 671 staged, 671 loaded — no rows dropped.

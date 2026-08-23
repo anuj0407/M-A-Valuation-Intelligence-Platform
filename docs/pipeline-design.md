@@ -1,4 +1,12 @@
-# Pipeline Design — PL_MA_Multiples_Ingestion
+# Pipeline Design — M&A Valuation Intelligence Platform
+
+This document covers all four ADF pipelines in the platform: the original
+ingestion pipeline, and the three pipelines that load the Azure SQL
+serving layer from Gold.
+
+---
+
+# Pipeline 1 — PL_MA_Multiples_Ingestion
 
 ## Overview
 
@@ -104,3 +112,109 @@ finished (succeeded or failed), how many files were actually copied, and
 the error message if something went wrong. This gives a simple history of
 every ingestion run over time, spanning both the ADF-side copy and the
 downstream Databricks transformation.
+
+---
+
+# Pipelines 2–4 — Azure SQL Serving Layer
+
+These three pipelines populate the Azure SQL star schema from the Gold Delta tables. They are separate, standalone pipelines — none of them modify `PL_MA_Multiples_Ingestion` or the Databricks job chain; they read from Gold/Silver as those layers already stand.
+
+## Shared Pattern
+
+All three pipelines follow the same two-stage shape: a **Copy activity**
+that reads from Databricks and stages the result in Azure SQL, followed
+by a **Script activity** that runs the actual load logic (MERGE, SCD2
+update+insert, or truncate+insert) against the real target table.
+
+**Source connection:** a dedicated linked service
+(`LS_Databricks_DeltaLake`) connects to the Databricks Delta Lake tables
+directly, authenticating via a Databricks personal access token stored in
+Key Vault. This is a different linked service from the one used to
+trigger the Databricks Job in Pipeline 1 — that one authenticates for job
+triggering, not for querying individual Delta tables, so a
+Delta-Lake-specific connector was needed.
+
+**Staging requirement:** ADF's Databricks Delta Lake connector cannot
+write directly into an Azure SQL sink — Copy activities from this source
+type require an intermediate staging hop through Blob/ADLS storage. Each
+Copy activity in these three pipelines has "Enable staging" turned on,
+pointed at a dedicated `adf-staging` container (kept separate from
+`raw`/`silver`/`gold` to avoid mixing serving-layer plumbing into the
+medallion layers).
+
+**Sink connection:** the same `LS_AzureSqlDatabase_MI` linked service used
+throughout the project, authenticating via ADF's managed identity.
+
+## Pipeline 2 — PL_Load_Dim_EVBracket_Year
+
+Loads `DimEVBracket` and `DimYear`, the two static/simple dimensions.
+
+```
+CPY_EVBracket_ToStaging → CPY_Year_ToStaging → SCR_Merge_Dimensions
+```
+
+- **CPY_EVBracket_ToStaging** — reads `silver_ev_bracket`, stages into
+  `dbo.stg_DimEVBracket` (pre-copy script truncates the staging table
+  first).
+- **CPY_Year_ToStaging** — reads a `UNION ALL DISTINCT` of the `year`
+  column across `gold_valuation_trend` and `gold_industry_ranking`,
+  stages into `dbo.stg_DimYear`.
+- **SCR_Merge_Dimensions** — runs two `MERGE` statements (NonQuery),
+  matching on each table's natural key (`ev_bracket`, `year`), so the
+  pipeline is safe to re-run without duplicating rows or disturbing
+  surrogate keys already referenced by `FactValuation`.
+
+## Pipeline 3 — PL_Load_Dim_Industry
+
+Loads `DimIndustry`, implementing SCD Type 2. See
+`docs/business-rules.md` for the change-detection logic itself.
+
+```
+CPY_Industry_ToStaging → SCR_SCD2_DimIndustry
+```
+
+- **CPY_Industry_ToStaging** — reads `sub_vertical, industry_group` from
+  `silver_industry`, stages into `dbo.stg_DimIndustry`.
+- **SCR_SCD2_DimIndustry** — runs two SQL statements **in order** (not a
+  single MERGE — SCD2 genuinely needs a close-out step followed by a
+  separate insert step): first an `UPDATE` that closes out any current
+  row whose `industry_group` no longer matches staging, then an `INSERT`
+  that adds a fresh current row for anything with no matching current
+  row — which correctly covers both brand-new sub-verticals and
+  sub-verticals whose classification just changed.
+
+## Pipeline 4 — PL_Load_FactValuation
+
+Loads `FactValuation`, unpivoting all four Gold tables into the fact
+table's narrow grain and resolving surrogate keys against all four
+dimensions.
+
+```
+CPY_FactValuation_ToStaging → SCR_Load_FactValuation
+```
+
+- **CPY_FactValuation_ToStaging** — the source query is a 7-branch
+  `UNION ALL` across the four Gold tables (`gold_industry_valuation` and
+  `gold_ev_bracket_analysis` each contribute two branches — one per
+  metric; `gold_valuation_trend` the same; `gold_industry_ranking`
+  contributes one, since it only carries EV/EBITDA). Each branch is
+  filtered to exclude rows where that branch's metric value is null.
+  Stages into `dbo.stg_FactValuation`.
+- **SCR_Load_FactValuation** — first `TRUNCATE TABLE dbo.FactValuation`
+  (safe here, since nothing downstream has an FK into `FactValuation`),
+  then a single `INSERT ... SELECT` joining staging against all four
+  dimensions to resolve surrogate keys (`DimIndustry` filtered to
+  `is_current = 1`; `DimEVBracket`/`DimYear` as `LEFT JOIN`s, since a
+  given staging row only ever has one of the two populated).
+
+Verified: 671 staging rows in, 671 `FactValuation` rows out — every row
+resolved cleanly against all four dimensions with none dropped by the
+joins.
+
+## Run Order
+
+These three pipelines have a dependency order: Pipeline 2 and Pipeline 3
+must both complete before Pipeline 4 runs, since `FactValuation`'s load
+looks up surrogate keys from all four dimension tables. They are
+currently run manually in sequence; they are not yet wired into a single
+parent pipeline or trigger.

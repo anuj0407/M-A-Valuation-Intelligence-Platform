@@ -115,3 +115,71 @@ source data, since "year-over-year" only has meaning for adjacent years.
 `gold_ev_bracket_analysis.valuation_premium` = this EV bracket's median
 EV/EBITDA multiple, expressed as a percentage difference against that same
 industry's average median EV/EBITDA across all of its brackets.
+
+---
+
+## Dimension Reference Data: Silver, Not Gold
+
+The Azure SQL dimension tables (`DimIndustry`, `DimEVBracket`) are sourced
+from Silver's purpose-built reference tables (`silver_industry`,
+`silver_ev_bracket`), not from scanning distinct values out of Gold. Two
+reasons:
+
+- **Gold is fact-shaped, not reference-shaped.** No Gold table is a clean,
+  standalone master list — bracket and industry appear in Gold only as
+  labels sitting next to measures. `silver_ev_bracket` carries attributes
+  (`min_ev`, `max_ev`, `bracket_order`) that no Gold table has at all.
+- **Completeness.** Building a dimension from `DISTINCT` values in Gold
+  would only capture industries/brackets that happen to have a
+  qualifying row somewhere in Gold after all upstream filtering — any
+  sub-vertical that exists in the source classification but had no
+  qualifying deals would silently vanish from the dimension. Sourcing
+  from Silver's reference tables guarantees the dimension is always
+  complete, independent of what Gold's filtering produced.
+
+`DimYear` is the one exception — year only exists as a fact-grain
+attribute, so there's no separate year reference table in Silver to draw
+from; it's built from the distinct years present in Gold instead.
+
+## SCD Type 2 — DimIndustry Change Detection
+
+`DimIndustry` implements SCD Type 2 in two sequential SQL statements, not
+a single `MERGE` — genuinely two separate actions, not one:
+
+1. **Close out.** Any current row (`is_current = 1`) whose `industry_group`
+   no longer matches the incoming `silver_industry` value has its
+   `effective_to` set to the load date and `is_current` set to 0.
+2. **Insert current.** A fresh row is inserted for anything with no
+   current row matching both `sub_vertical` AND `industry_group` —
+   which correctly covers two distinct cases in one condition: a
+   brand-new `sub_vertical` that's never had a row, and a `sub_vertical`
+   whose row was just closed out in step 1 because its classification
+   changed.
+
+On a first load, every `sub_vertical` is new, so only step 2 does
+anything — step 1 correctly finds nothing to close, since there's no
+existing current row yet to compare against.
+
+## FactValuation Grain and Unpivot
+
+`FactValuation`'s grain is one row per industry × EV bracket **or**
+year × metric — `ev_bracket_key` and `year_key` are mutually exclusive
+on any given row (see `docs/data-dictionary.md` for the full column
+breakdown). This mirrors the same nullable-key pattern already used in
+`silver_valuation_multiple` (`ev_bracket` / `source_year`), which exists
+because the two upstream source files never share both dimensions on the
+same record.
+
+Each Gold table's wide columns (`median_ev_ebitda`, `median_ev_revenue`)
+are unpivoted into separate rows during the load, one per metric, only
+where that metric's value is non-null in the source row — a Gold row
+with only an EBITDA value does not produce an empty Revenue row.
+
+## Metrics Excluded from FactValuation
+
+`yoy_change`, `rank`, `percentile`, and `valuation_premium` all exist in
+their respective Gold tables but are deliberately not carried into
+`FactValuation`. Per the star schema's minimal fact design, these are
+report-time calculations — recomputed as Power BI DAX measures over the
+fact table rather than stored, since they're derived values, not raw
+facts.
