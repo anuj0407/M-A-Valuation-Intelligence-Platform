@@ -43,24 +43,7 @@ The source publishes two structured JSON resources:
 
 ## 4. Architecture
 
-```
-GitHub (raw JSON source)
-        │  Azure Data Factory — Copy activity
-        ▼
-ADLS Gen2 — Bronze  (raw/ma_multiples/ingestion_date=YYYY-MM-DD/)
-        │  Databricks Job — 5 chained PySpark notebooks
-        ▼
-ADLS Gen2 / Delta Lake — Silver  (validated, flattened, deduplicated)
-        │
-        ▼
-ADLS Gen2 / Delta Lake — Gold  (4 curated, business-ready tables)
-        │  Azure Data Factory — Copy + Script activities
-        ▼
-Azure SQL — Star Schema  (4 dimensions + 1 fact table, SCD Type 2)
-        │
-        ▼
-Power BI — 4-page executive dashboard
-```
+![Architecture Design](architecture/architecture-diagram.png)
 
 The platform follows a **Medallion Architecture**: Bronze preserves the data exactly as received (with full ingestion metadata and dated snapshots for historical reproducibility), Silver applies schema enforcement, flattening, cleansing and deduplication, and Gold produces curated, business-ready aggregates. From Gold, a relational star schema in Azure SQL supports fast, familiar BI querying, and Power BI provides the executive-facing layer.
 
